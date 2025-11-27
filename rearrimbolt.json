@@ -1,0 +1,9 @@
+{
+    "Faces": [
+        { "name": "1", "label": "fillet" },
+        { "name": "2", "label": "not_fillet" },
+        { "name": "3", "label": "not_fillet" },
+        { "name": "4", "label": "fillet" },
+        { "name": "47", "label": "fillet" }
+    ]
+}
