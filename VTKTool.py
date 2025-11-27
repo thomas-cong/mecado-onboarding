@@ -40,11 +40,7 @@ class BRepMesh:
         self.face_labels.SetName("FaceLabel")
         self.point_map = {}  # quantized coord -> global point id
         self.quant_scale = quant_scale
-        try:
-            json_path = step_path.replace(".step", ".json")
-            self.label_faces_from_json(json_path)
-        except:
-            pass
+        self.step_path = step_path
 
     def _load_step(self, path: str):
         reader = STEPControl_Reader()
@@ -63,6 +59,12 @@ class BRepMesh:
 
     def build(self):
         self._enumerate_faces(self._add_face_to_arrays)
+        try:
+            json_path = self.step_path.replace(".stp", ".json")
+            self.label_faces_from_json(json_path)
+        except:
+            print("failed to find json")
+            pass
 
     def _enumerate_faces(self, callback):
         exp = TopExp_Explorer(self.shape, TopAbs_FACE)
@@ -205,13 +207,6 @@ class VTPVisualizer:
         self.render_window.Render()
         self.render_window_interactor.Initialize()
         self.render_window_interactor.Start()
-class FaceLabeler:
-    
-
-
-
-
-
 if __name__ == "__main__":
     tool = BRepMesh("./rearrimbolt.stp", 0.1, 0.5)
     tool.build()
