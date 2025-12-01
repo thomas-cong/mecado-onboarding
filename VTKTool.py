@@ -14,6 +14,7 @@ import vtkmodules.vtkRenderingFreeType  # side-effect import also works
 import vtkmodules.vtkRenderingOpenGL2
 import vtk
 
+import feature_calculation
 
 # Visualizer Imports
 from vtkmodules.vtkRenderingCore import (
@@ -45,23 +46,32 @@ class BRepMesh:
         self.build()
 
     def _load_step(self, path: str):
+        '''
+        Load the STEP file
+        '''
         reader = STEPControl_Reader()
         reader.ReadFile(path)
         reader.TransferRoots()
         return reader.OneShape()
 
     def _mesh_shape(self, shape, linear_deflection: float, angular_deflection: float):
+        '''
+        Mesh the shape
+        '''
         mesh = BRepMesh_IncrementalMesh(shape, linear_deflection, False, angular_deflection, True)
         mesh.Perform()
         return mesh
 
     def _quantize(self, p):
+        '''
+        Quantize a point (3D helper)
+        '''
         s = self.quant_scale
         return (int(round(p.X() * s)), int(round(p.Y() * s)), int(round(p.Z() * s)))
 
     def build(self):
         '''
-        Build the mesh
+        Build the mesh and fill arrays, labels, etc.
         '''
         self._enumerate_faces(self._add_face_to_arrays)
         self.built = True
@@ -178,6 +188,32 @@ class BRepMesh:
             face_id = self.face_ids.GetValue(i) # get face id
             face_label = self.face_labels.GetValue(i) # get face label
             yield (face_id, face_label, points) # yield face id, label, and points
+    def calculate_features(self):
+        '''
+        Calculate features for each face
+        '''
+        self.check_built()
+        features = {}
+        curvatures = feature_calculation.curvatures(self)
+        normals = feature_calculation.normals(self)
+        for face_id, face_label, points in self.iter_faces():
+            features[face_id] = {
+                "label": face_label,
+                "curvatures": curvatures[face_id],
+                "normals": normals[face_id]
+            }
+        return features
+    def write_json(self, features: dict):
+        '''
+        Write the features to a json file
+        features: dict of face_id -> dict of feature_name -> feature_value
+        '''
+        self.check_built()
+        formatted_features = {"Faces": []}åå
+        for face_id, feature_values in features.items():
+            formatted_features["Faces"].append({"name": face_id, **feature_values})
+        with open(self.step_path.replace(".stp", "_features.json"), "w") as f:
+            json.dump(formatted_features, f)
 
 class VTPVisualizer:
     def __init__(self, path: str):
@@ -258,6 +294,8 @@ class VTPVisualizer:
         self.render_window_interactor.Start()
 if __name__ == "__main__":
     brep = BRepMesh("./rearrimbolt.stp", 0.1, 0.5)
+    features = brep.calculate_features()
+    brep.write_json(features)
     brep.write_vtp("./rearrimbolt.vtp")
     viz = VTPVisualizer("./rearrimbolt.vtp")
     viz.enable_hover_face_labels()
