@@ -209,7 +209,7 @@ class BRepMesh:
         features: dict of face_id -> dict of feature_name -> feature_value
         '''
         self.check_built()
-        formatted_features = {"Faces": []}åå
+        formatted_features = {"Faces": []}
         for face_id, feature_values in features.items():
             formatted_features["Faces"].append({"name": face_id, **feature_values})
         with open(self.step_path.replace(".stp", "_features.json"), "w") as f:
