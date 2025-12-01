@@ -271,6 +271,7 @@ class VTPVisualizer:
 
         self.render_window = vtkRenderWindow()
         self.render_window.AddRenderer(self.renderer)
+        self.render_window.SetSize(1400, 900)
 
         self.render_window_interactor = vtkRenderWindowInteractor()
         self.render_window_interactor.SetRenderWindow(self.render_window)
