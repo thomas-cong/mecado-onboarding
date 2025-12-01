@@ -44,6 +44,7 @@ class BRepMesh:
         self.step_path = step_path
         self.face_shapes = {}
         self.build()
+        self.features = self.calculate_features()
 
     def _load_step(self, path: str):
         '''
@@ -80,7 +81,9 @@ class BRepMesh:
             self.label_faces_from_json(json_path)
         except:
             print("failed to find json")
-            pass
+            n_cells = self.face_ids.GetNumberOfTuples()
+            for i in range(n_cells):
+                self.face_labels.InsertNextValue("not_fillet")
 
     def _enumerate_faces(self, callback):
         '''
@@ -141,7 +144,7 @@ class BRepMesh:
         n_cells = self.face_ids.GetNumberOfTuples()
         for i in range(n_cells):
             face_id = int(self.face_ids.GetValue(i))
-            label = id_to_label.get(face_id, "")
+            label = id_to_label.get(face_id, "not_fillet")
             self.face_labels.InsertNextValue(label)
     def make_polydata(self):
         '''
@@ -198,11 +201,8 @@ class BRepMesh:
         normals = feature_calculation.normals(self)
         for face_id, face_label, points in self.iter_faces():
             features[face_id] = {
-                "label": face_label if face_label != "" else "not_fillet",
-                "features": {
-                    "curvatures": curvatures[face_id],
-                    "normals": normals[face_id]
-                }
+                "curvatures": curvatures[face_id],
+                "normals": normals[face_id]
             }
         return features
     def write_json(self):
@@ -210,10 +210,26 @@ class BRepMesh:
         Write the features to a json file
         '''
         self.check_built()
-        features = self.calculate_features()
         formatted_features = {"Faces": []}
-        for face_id, feature_values in features.items():
-            formatted_features["Faces"].append({"name": face_id, **feature_values})
+        # Use precomputed numeric features, but always read the *current* labels
+        for face_id, feature_values in self.features.items():
+            # Current label from the vtk arrays; default to not_fillet if empty
+            label = "not_fillet"
+            # Scan cells to find one with this face_id to read its label
+            n_cells = self.face_ids.GetNumberOfTuples()
+            for i in range(n_cells):
+                if int(self.face_ids.GetValue(i)) == face_id:
+                    current_label = self.face_labels.GetValue(i)
+                    label = current_label if current_label else "not_fillet"
+                    break
+
+            formatted_features["Faces"].append(
+                {
+                    "name": face_id,
+                    "label": label,
+                    "features": feature_values,
+                }
+            )
         with open(self.step_path.replace(".stp", ".json"), "w") as f:
             json.dump(formatted_features, f)
 
@@ -274,17 +290,6 @@ class VTPVisualizer:
         self.text_actor.SetInput("FaceID: -")
         self.renderer.AddActor2D(self.text_actor)
 
-        self.feature_button_actor = vtkTextActor()
-
-        feature_prop = self.feature_button_actor.GetTextProperty()
-        feature_prop.SetFontSize(18)
-        feature_prop.SetColor(0, 0, 0)
-        feature_prop.SetBackgroundColor(0.8, 0.8, 0.8)
-        feature_prop.SetBackgroundOpacity(1.0)
-        self.feature_button_actor.SetDisplayPosition(10, 40)
-        self.feature_button_actor.SetInput("Calculate Features")
-        self.renderer.AddActor2D(self.feature_button_actor)
-
         self.picker = vtkCellPicker()
         self.render_window_interactor.SetPicker(self.picker)
 
@@ -293,7 +298,6 @@ class VTPVisualizer:
         ren_win_interactor = self.render_window_interactor
         poly = self.polydata
         text_actor = self.text_actor
-        feature_button_actor = self.feature_button_actor
         picker = self.picker
 
         def on_mouse_move(obj, event):
@@ -321,12 +325,6 @@ class VTPVisualizer:
 
         def on_left_button_press(obj, event):
             x, y = ren_win_interactor.GetEventPosition()
-            bx, by = feature_button_actor.GetPosition()
-            if bx <= x <= bx + 200 and by <= y <= by + 30:
-                if self.brep is not None:
-                    self.brep.write_json()
-                ren_win.Render()
-                return
             if not picker.Pick(x, y, 0, ren):
                 return
             cell_id = picker.GetCellId()
@@ -342,7 +340,7 @@ class VTPVisualizer:
             current_label = arr_labels.GetValue(cell_id)
 
             # Toggle between no label (non-fillet) and 'fillet'
-            new_label = "fillet" if current_label == "" else ""
+            new_label = "fillet" if current_label == "not_fillet" else "not_fillet"
 
             # Update all cells in the polydata that belong to this face_id
             n_cells = poly.GetNumberOfCells()
@@ -390,3 +388,4 @@ if __name__ == "__main__":
     viz = VTPVisualizer(vtp_path, brep=brep)
     viz.enable_hover_face_labels()
     viz.start()
+    brep.write_json()
