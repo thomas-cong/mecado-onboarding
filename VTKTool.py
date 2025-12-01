@@ -228,8 +228,24 @@ class VTPVisualizer:
         print("CellData arrays:", cd.GetNumberOfArrays())
         for i in range(cd.GetNumberOfArrays()):
             print("CellData array", i, ":", cd.GetArrayName(i))
+        # Create a per-cell color array: fillet -> green, others -> gray
+        colors = vtk.vtkUnsignedCharArray()
+        colors.SetNumberOfComponents(3)
+        colors.SetName("FaceColor")
+        n_cells = self.polydata.GetNumberOfCells()
+        arr_labels = cd.GetAbstractArray("FaceLabel")
+        for i in range(n_cells):
+            label = arr_labels.GetValue(i) if arr_labels is not None else ""
+            if label == "fillet":
+                colors.InsertNextTuple3(0, 255, 0)   # green
+            else:
+                colors.InsertNextTuple3(200, 200, 200)  # gray
+        cd.SetScalars(colors)
+
         self.mapper = vtkPolyDataMapper()
         self.mapper.SetInputData(self.polydata)
+        self.mapper.SetScalarModeToUseCellData()
+        self.mapper.SetColorModeToDirectScalars()
 
         self.actor = vtkActor()
         self.actor.SetMapper(self.mapper)
@@ -312,9 +328,14 @@ class VTPVisualizer:
 
             # Update all cells in the polydata that belong to this face_id
             n_cells = poly.GetNumberOfCells()
+            colors = poly.GetCellData().GetScalars()
             for cid in range(n_cells):
                 if int(arr_ids.GetValue(cid)) == face_id:
                     arr_labels.SetValue(cid, new_label)
+                    if new_label == "fillet":
+                        colors.SetTuple3(cid, 0, 255, 0)
+                    else:
+                        colors.SetTuple3(cid, 200, 200, 200)
 
             # Keep the underlying BRepMesh labels in sync and rewrite JSON/features
             if self.brep is not None:
@@ -326,6 +347,12 @@ class VTPVisualizer:
                         brep_labels.SetValue(i, new_label)
                 # Recompute features and write updated JSON
                 self.brep.write_json()
+
+            # Notify VTK that scalars and polydata have changed so colors update
+            if colors is not None:
+                colors.Modified()
+                poly.GetCellData().SetScalars(colors)
+            poly.Modified()
 
             text_actor.SetInput(f"FaceID: {face_id}\nFaceLabel: {new_label}")
             ren_win.Render()
