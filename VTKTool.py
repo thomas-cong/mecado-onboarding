@@ -83,7 +83,7 @@ class BRepMesh:
             print("failed to find json")
             n_cells = self.face_ids.GetNumberOfTuples()
             for i in range(n_cells):
-                self.face_labels.InsertNextValue("not_fillet")
+                self.face_labels.InsertNextValue("")
 
     def _enumerate_faces(self, callback):
         '''
@@ -254,8 +254,10 @@ class VTPVisualizer:
             label = arr_labels.GetValue(i) if arr_labels is not None else ""
             if label == "fillet":
                 colors.InsertNextTuple3(0, 255, 0)   # green
+            elif label == "not_fillet":
+                colors.InsertNextTuple3(255, 0, 0)   # red
             else:
-                colors.InsertNextTuple3(200, 200, 200)  # gray
+                colors.InsertNextTuple3(200, 200, 200)  # neutral gray
         cd.SetScalars(colors)
 
         self.mapper = vtkPolyDataMapper()
@@ -340,8 +342,13 @@ class VTPVisualizer:
             face_id = int(arr_ids.GetValue(cell_id))
             current_label = arr_labels.GetValue(cell_id)
 
-            # Toggle between no label (non-fillet) and 'fillet'
-            new_label = "fillet" if current_label == "not_fillet" else "not_fillet"
+            # Cycle labels: "" -> not_fillet -> fillet -> ""
+            if current_label == "":
+                new_label = "not_fillet"
+            elif current_label == "not_fillet":
+                new_label = "fillet"
+            else:
+                new_label = ""
 
             # Update all cells in the polydata that belong to this face_id
             n_cells = poly.GetNumberOfCells()
@@ -350,9 +357,11 @@ class VTPVisualizer:
                 if int(arr_ids.GetValue(cid)) == face_id:
                     arr_labels.SetValue(cid, new_label)
                     if new_label == "fillet":
-                        colors.SetTuple3(cid, 0, 255, 0)
+                        colors.SetTuple3(cid, 0, 255, 0)      # green
+                    elif new_label == "not_fillet":
+                        colors.SetTuple3(cid, 255, 0, 0)      # red
                     else:
-                        colors.SetTuple3(cid, 200, 200, 200)
+                        colors.SetTuple3(cid, 200, 200, 200)  # neutral gray
 
             # Keep the underlying BRepMesh labels in sync and rewrite JSON/features
             if self.brep is not None:
