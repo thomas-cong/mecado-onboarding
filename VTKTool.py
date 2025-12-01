@@ -12,7 +12,7 @@ from vtkmodules.vtkIOXML import vtkXMLPolyDataWriter
 import json
 import vtkmodules.vtkRenderingFreeType  # side-effect import also works
 import vtkmodules.vtkRenderingOpenGL2
-
+import vtk
 
 
 # Visualizer Imports
@@ -41,6 +41,8 @@ class BRepMesh:
         self.point_map = {}  # quantized coord -> global point id
         self.quant_scale = quant_scale
         self.step_path = step_path
+        self.face_shapes = {}
+        self.build()
 
     def _load_step(self, path: str):
         reader = STEPControl_Reader()
@@ -58,7 +60,11 @@ class BRepMesh:
         return (int(round(p.X() * s)), int(round(p.Y() * s)), int(round(p.Z() * s)))
 
     def build(self):
+        '''
+        Build the mesh
+        '''
         self._enumerate_faces(self._add_face_to_arrays)
+        self.built = True
         try:
             json_path = self.step_path.replace(".stp", ".json")
             self.label_faces_from_json(json_path)
@@ -67,17 +73,24 @@ class BRepMesh:
             pass
 
     def _enumerate_faces(self, callback):
+        '''
+        Enumerate all faces in the mesh
+        '''
         exp = TopExp_Explorer(self.shape, TopAbs_FACE)
         face_id = 0
         while exp.More():
             face_id += 1
             face = topods.Face(exp.Current())
+            self.face_shapes[face_id] = face
             loc = TopLoc_Location()
             tri = BRep_Tool.Triangulation(face, loc)
             callback(face, face_id, tri, loc)
             exp.Next()
 
     def _add_face_to_arrays(self, face, face_id, tri, loc):
+        '''
+        Add a face to the arrays
+        '''
         if tri is None:
             return
 
@@ -108,6 +121,10 @@ class BRepMesh:
             self.cells.InsertCellPoint(local_to_global[n3])
             self.face_ids.InsertNextValue(face_id)
     def label_faces_from_json(self, path: str):
+        '''
+        Label faces from a json file
+        '''
+        self.check_built()
         with open(path, "r") as f:
             data = json.load(f)
         id_to_label = {int(item["name"]): item["label"] for item in data["Faces"]}
@@ -117,6 +134,10 @@ class BRepMesh:
             label = id_to_label.get(face_id, "")
             self.face_labels.InsertNextValue(label)
     def make_polydata(self):
+        '''
+        Make a vtkPolyData object from the mesh
+        '''
+        self.check_built()
         poly = vtkPolyData()
         poly.SetPoints(self.pts)
         poly.SetPolys(self.cells)
@@ -126,10 +147,38 @@ class BRepMesh:
         return poly
 
     def write_vtp(self, path: str):
+        '''
+        Write the mesh to a VTP file
+        '''
+        self.check_built()
         writer = vtkXMLPolyDataWriter()
         writer.SetFileName(path)
         writer.SetInputData(self.make_polydata())
         writer.Write()
+    def check_built(self):
+        '''
+        Check that the mesh has been built and lists are filled
+        '''
+        if not self.built:
+            raise ValueError("BRepMesh must be built before this operation")
+    def iter_faces(self):
+        '''
+        Iterate over all faces in the mesh and return triangles
+        '''
+        self.check_built() # check that lists are filled 
+        id_list = vtk.vtkIdList() # creates empty object of vtkIdList
+        self.cells.InitTraversal() # resets traversal to start from beginning
+        n_cells = self.face_ids.GetNumberOfTuples() # determines how many unique faces there are (which is also how many cells)
+        for i in range(n_cells): # loop over all cells
+            ok = self.cells.GetNextCell(id_list) # gets next cell and stores it in id_list
+            if not ok:
+                raise ValueError("Failed to get cell") # if can't get cell fail
+            num_ids = id_list.GetNumberOfIds() # get number of ids in this cell (three)
+            points = [self.pts.GetPoint(id_list.GetId(j)) for j in range(num_ids)] # get points for this cell
+            face_id = self.face_ids.GetValue(i) # get face id
+            face_label = self.face_labels.GetValue(i) # get face label
+            yield (face_id, face_label, points) # yield face id, label, and points
+
 class VTPVisualizer:
     def __init__(self, path: str):
         self.reader = vtkXMLPolyDataReader()
@@ -208,9 +257,8 @@ class VTPVisualizer:
         self.render_window_interactor.Initialize()
         self.render_window_interactor.Start()
 if __name__ == "__main__":
-    tool = BRepMesh("./rearrimbolt.stp", 0.1, 0.5)
-    tool.build()
-    tool.write_vtp("./rearrimbolt.vtp")
+    brep = BRepMesh("./rearrimbolt.stp", 0.1, 0.5)
+    brep.write_vtp("./rearrimbolt.vtp")
     viz = VTPVisualizer("./rearrimbolt.vtp")
     viz.enable_hover_face_labels()
     viz.start()
