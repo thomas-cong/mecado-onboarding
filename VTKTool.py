@@ -198,7 +198,7 @@ class BRepMesh:
         normals = feature_calculation.normals(self)
         for face_id, face_label, points in self.iter_faces():
             features[face_id] = {
-                "label": face_label,
+                "label": face_label if face_label != "" else "not_fillet",
                 "features": {
                     "curvatures": curvatures[face_id],
                     "normals": normals[face_id]
@@ -274,6 +274,17 @@ class VTPVisualizer:
         self.text_actor.SetInput("FaceID: -")
         self.renderer.AddActor2D(self.text_actor)
 
+        self.feature_button_actor = vtkTextActor()
+
+        feature_prop = self.feature_button_actor.GetTextProperty()
+        feature_prop.SetFontSize(18)
+        feature_prop.SetColor(0, 0, 0)
+        feature_prop.SetBackgroundColor(0.8, 0.8, 0.8)
+        feature_prop.SetBackgroundOpacity(1.0)
+        self.feature_button_actor.SetDisplayPosition(10, 40)
+        self.feature_button_actor.SetInput("Calculate Features")
+        self.renderer.AddActor2D(self.feature_button_actor)
+
         self.picker = vtkCellPicker()
         self.render_window_interactor.SetPicker(self.picker)
 
@@ -282,6 +293,7 @@ class VTPVisualizer:
         ren_win_interactor = self.render_window_interactor
         poly = self.polydata
         text_actor = self.text_actor
+        feature_button_actor = self.feature_button_actor
         picker = self.picker
 
         def on_mouse_move(obj, event):
@@ -309,6 +321,12 @@ class VTPVisualizer:
 
         def on_left_button_press(obj, event):
             x, y = ren_win_interactor.GetEventPosition()
+            bx, by = feature_button_actor.GetPosition()
+            if bx <= x <= bx + 200 and by <= y <= by + 30:
+                if self.brep is not None:
+                    self.brep.write_json()
+                ren_win.Render()
+                return
             if not picker.Pick(x, y, 0, ren):
                 return
             cell_id = picker.GetCellId()
@@ -345,8 +363,6 @@ class VTPVisualizer:
                 for i in range(n_brep_cells):
                     if int(brep_ids.GetValue(i)) == face_id:
                         brep_labels.SetValue(i, new_label)
-                # Recompute features and write updated JSON
-                self.brep.write_json()
 
             # Notify VTK that scalars and polydata have changed so colors update
             if colors is not None:
@@ -364,9 +380,13 @@ class VTPVisualizer:
         self.render_window_interactor.Initialize()
         self.render_window_interactor.Start()
 if __name__ == "__main__":
-    brep = BRepMesh("./rearrimbolt.stp", 0.1, 0.5)
-    brep.write_json()
-    brep.write_vtp("./rearrimbolt.vtp")
-    viz = VTPVisualizer("./rearrimbolt.vtp", brep=brep)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--step", type=str, required=True)
+    args = parser.parse_args()
+    brep = BRepMesh(args.step, 0.1, 0.5)
+    vtp_path = args.step.replace(".stp", ".vtp")
+    brep.write_vtp(vtp_path)
+    viz = VTPVisualizer(vtp_path, brep=brep)
     viz.enable_hover_face_labels()
     viz.start()
