@@ -199,28 +199,31 @@ class BRepMesh:
         for face_id, face_label, points in self.iter_faces():
             features[face_id] = {
                 "label": face_label,
-                "curvatures": curvatures[face_id],
-                "normals": normals[face_id]
+                "features": {
+                    "curvatures": curvatures[face_id],
+                    "normals": normals[face_id]
+                }
             }
         return features
-    def write_json(self, features: dict):
+    def write_json(self):
         '''
         Write the features to a json file
-        features: dict of face_id -> dict of feature_name -> feature_value
         '''
         self.check_built()
+        features = self.calculate_features()
         formatted_features = {"Faces": []}
         for face_id, feature_values in features.items():
             formatted_features["Faces"].append({"name": face_id, **feature_values})
-        with open(self.step_path.replace(".stp", "_features.json"), "w") as f:
+        with open(self.step_path.replace(".stp", ".json"), "w") as f:
             json.dump(formatted_features, f)
 
 class VTPVisualizer:
-    def __init__(self, path: str):
+    def __init__(self, path: str, brep: BRepMesh | None = None):
         self.reader = vtkXMLPolyDataReader()
         self.reader.SetFileName(path)
         self.reader.Update()
         self.polydata = self.reader.GetOutput()
+        self.brep = brep
         cd = self.polydata.GetCellData()
         print("CellData arrays:", cd.GetNumberOfArrays())
         for i in range(cd.GetNumberOfArrays()):
@@ -287,6 +290,47 @@ class VTPVisualizer:
             text_actor.SetInput(f"FaceID: {face_id}\nFaceLabel: {face_label}")
             ren_win.Render()
         self.render_window_interactor.AddObserver("MouseMoveEvent", on_mouse_move)
+
+        def on_left_button_press(obj, event):
+            x, y = ren_win_interactor.GetEventPosition()
+            if not picker.Pick(x, y, 0, ren):
+                return
+            cell_id = picker.GetCellId()
+            if cell_id < 0:
+                return
+
+            arr_ids = poly.GetCellData().GetArray("FaceID")
+            arr_labels = poly.GetCellData().GetAbstractArray("FaceLabel")
+            if arr_ids is None or arr_labels is None:
+                return
+
+            face_id = int(arr_ids.GetValue(cell_id))
+            current_label = arr_labels.GetValue(cell_id)
+
+            # Toggle between no label (non-fillet) and 'fillet'
+            new_label = "fillet" if current_label == "" else ""
+
+            # Update all cells in the polydata that belong to this face_id
+            n_cells = poly.GetNumberOfCells()
+            for cid in range(n_cells):
+                if int(arr_ids.GetValue(cid)) == face_id:
+                    arr_labels.SetValue(cid, new_label)
+
+            # Keep the underlying BRepMesh labels in sync and rewrite JSON/features
+            if self.brep is not None:
+                brep_ids = self.brep.face_ids
+                brep_labels = self.brep.face_labels
+                n_brep_cells = brep_ids.GetNumberOfTuples()
+                for i in range(n_brep_cells):
+                    if int(brep_ids.GetValue(i)) == face_id:
+                        brep_labels.SetValue(i, new_label)
+                # Recompute features and write updated JSON
+                self.brep.write_json()
+
+            text_actor.SetInput(f"FaceID: {face_id}\nFaceLabel: {new_label}")
+            ren_win.Render()
+
+        self.render_window_interactor.AddObserver("LeftButtonPressEvent", on_left_button_press)
     def start(self):
         self.renderer.ResetCamera()
         self.render_window.Render()
@@ -294,9 +338,8 @@ class VTPVisualizer:
         self.render_window_interactor.Start()
 if __name__ == "__main__":
     brep = BRepMesh("./rearrimbolt.stp", 0.1, 0.5)
-    features = brep.calculate_features()
-    brep.write_json(features)
+    brep.write_json()
     brep.write_vtp("./rearrimbolt.vtp")
-    viz = VTPVisualizer("./rearrimbolt.vtp")
+    viz = VTPVisualizer("./rearrimbolt.vtp", brep=brep)
     viz.enable_hover_face_labels()
     viz.start()
