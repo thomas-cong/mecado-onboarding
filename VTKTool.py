@@ -220,7 +220,7 @@ class BRepMesh:
             for i in range(n_cells):
                 if int(self.face_ids.GetValue(i)) == face_id:
                     current_label = self.face_labels.GetValue(i)
-                    label = current_label if current_label else "not_fillet"
+                    label = current_label
                     break
 
             formatted_features["Faces"].append(

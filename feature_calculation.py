@@ -59,7 +59,7 @@ def curvatures(brep):
             kmax_avg = 0.0
             H_avg = 0.0
 
-        result[face_id] = (kmin_avg, kmax_avg, H_avg)
+        result[face_id] = {"curvature_min": kmin_avg, "curvature_max": kmax_avg, "curvature_avg": H_avg}
     return result
 def normals(brep):
     '''
@@ -96,7 +96,7 @@ def normals(brep):
         min_dot = np.min(dots)
         var = np.var(dots)
         mean_dot = np.mean(dots)
-        result[face_id] = (max_dot, min_dot, var, mean_dot) # variance of dot products
+        result[face_id] = {"normal_max_dot": max_dot, "normal_min_dot": min_dot, "normal_var": var, "normal_mean_dot": mean_dot} # variance of dot products
     return result
     
 
